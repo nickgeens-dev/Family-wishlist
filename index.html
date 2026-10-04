@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Family wishlist</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=DM+Sans:wght@400;500;600&display=swap"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="top-in">
+        <h1>Family wishlist</h1>
+        <p class="sub">
+          Sinterklaas and Christmas. Add a wish, tick it off when it's bought.
+        </p>
+        <div class="chips" id="countdowns"></div>
+        <button class="share" id="share" type="button">
+          Copy link to share with family
+        </button>
+      </div>
+      <div class="ribbon" aria-hidden="true"></div>
+    </header>
+
+    <main class="wrap">
+      <div class="notice" id="notice" hidden></div>
+
+      <section class="panel">
+        <label class="inline" for="me">
+          <span>Your name</span>
+          <input
+            type="text"
+            id="me"
+            placeholder="Shown next to items you buy"
+            maxlength="30"
+            autocomplete="given-name"
+          />
+        </label>
+      </section>
+
+      <section class="panel" id="addpanel">
+        <h2>Add a wish</h2>
+        <div class="grid2">
+          <div>
+            <label class="lbl" for="who">Who is it for?</label>
+            <input
+              type="text"
+              id="who"
+              placeholder="e.g. Emma"
+              maxlength="30"
+              autocomplete="off"
+            />
+          </div>
+          <div>
+            <label class="lbl" for="occ">Occasion</label>
+            <select id="occ">
+              <option value="both">Both</option>
+              <option value="sint">Sinterklaas</option>
+              <option value="xmas">Christmas</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label class="lbl" for="what">What would they like?</label>
+          <input
+            type="text"
+            id="what"
+            placeholder="e.g. LEGO Technic set"
+            maxlength="120"
+            autocomplete="off"
+          />
+        </div>
+        <div class="field">
+          <label class="lbl" for="note">Note or link (optional)</label>
+          <input
+            type="text"
+            id="note"
+            placeholder="Size, colour, shop link"
+            maxlength="300"
+            autocomplete="off"
+          />
+        </div>
+        <button class="primary" id="add" type="button">Add to list</button>
+      </section>
+
+      <nav class="tabs" id="tabs" aria-label="Filter by occasion"></nav>
+      <div id="progress"></div>
+      <div id="list"><p class="empty">Loading the list…</p></div>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
