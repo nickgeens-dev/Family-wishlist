@@ -77,13 +77,18 @@ function localAdapter(listId) {
       return [];
     }
   };
+  // Returns false when the browser storage is full (photos take space)
   const write = (items) => {
     try {
       localStorage.setItem(key, JSON.stringify(items));
     } catch (e) {
-      /* ignore */
+      return false;
     }
     listener(items);
+    return true;
+  };
+  const save = (items) => {
+    if (!write(items)) throw new Error("storage full");
   };
 
   window.addEventListener("storage", (e) => {
@@ -99,13 +104,13 @@ function localAdapter(listId) {
     async add(data) {
       const items = read();
       items.push({ id: uid(), ...data });
-      write(items);
+      save(items);
     },
     async update(id, patch) {
-      write(read().map((it) => (it.id === id ? { ...it, ...patch } : it)));
+      save(read().map((it) => (it.id === id ? { ...it, ...patch } : it)));
     },
     async remove(id) {
-      write(read().filter((it) => it.id !== id));
+      save(read().filter((it) => it.id !== id));
     },
   };
 }
@@ -150,6 +155,8 @@ let items = [];
 let filter = "all";
 let pendingDelete = null;
 let me = LS.get("wl_me");
+let pendingImage = ""; // photo chosen in the form, as a small JPEG data URL
+const MAX_IMAGE_CHARS = 150000; // keeps one wish well below Firestore's 1 MiB limit
 
 // ---------------------------------------------------------------------------
 // Rendering
@@ -178,9 +185,16 @@ function renderCountdowns() {
     const n = daysUntil(month, day);
     const chip = document.createElement("span");
     chip.className = "chip";
-    const strong = document.createElement("b");
-    strong.textContent = n === 0 ? "vandaag" : n === 1 ? "1 dag" : n + " dagen";
-    chip.append(name + ": ", strong);
+    const num = document.createElement("b");
+    num.className = "num";
+    num.textContent = n === 0 ? "🎉" : n;
+    const unit = document.createElement("span");
+    unit.className = "unit";
+    unit.textContent =
+      n === 0
+        ? name + " is vandaag!"
+        : (n === 1 ? "dag" : "dagen") + " tot " + name;
+    chip.append(num, unit);
     box.appendChild(chip);
   });
 }
@@ -252,6 +266,105 @@ function appendLinkified(text, parent) {
   if (last < text.length) parent.append(text.slice(last));
 }
 
+// Only http(s) links are allowed (blocks javascript: and similar)
+function normalizeLink(input) {
+  let text = (input || "").trim();
+  if (!text) return "";
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(text)) text = "https://" + text;
+  try {
+    const url = new URL(text);
+    if (
+      (url.protocol !== "https:" && url.protocol !== "http:") ||
+      !url.hostname.includes(".")
+    )
+      return null;
+    return url.href;
+  } catch (e) {
+    return null;
+  }
+}
+
+function safeLink(value) {
+  const href = normalizeLink(value);
+  return href || "";
+}
+
+// Shrinks a chosen photo to a small JPEG so it fits in the database
+function resizeImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      for (const [max, quality] of [
+        [480, 0.72],
+        [360, 0.6],
+        [260, 0.5],
+      ]) {
+        const scale = Math.min(
+          1,
+          max / Math.max(img.naturalWidth, img.naturalHeight),
+        );
+        const w = Math.max(1, Math.round(img.naturalWidth * scale));
+        const h = Math.max(1, Math.round(img.naturalHeight * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#fff"; // transparent PNGs get a white background
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const data = canvas.toDataURL("image/jpeg", quality);
+        if (data.length <= MAX_IMAGE_CHARS) return resolve(data);
+      }
+      reject(new Error("too big"));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("unreadable"));
+    };
+    img.src = url;
+  });
+}
+
+function renderPhotoPreview() {
+  const box = $("photoPreview");
+  box.textContent = "";
+  if (!pendingImage) return;
+  const img = document.createElement("img");
+  img.src = pendingImage;
+  img.alt = "Gekozen foto";
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.textContent = "Foto verwijderen";
+  remove.addEventListener("click", () => {
+    pendingImage = "";
+    renderPhotoPreview();
+  });
+  box.append(img, remove);
+}
+
+function openLightbox(src) {
+  const overlay = document.createElement("div");
+  overlay.className = "lightbox";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-label", "Foto");
+  const img = document.createElement("img");
+  img.src = src;
+  img.alt = "";
+  overlay.appendChild(img);
+  const close = () => {
+    overlay.remove();
+    document.removeEventListener("keydown", onKey);
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape") close();
+  };
+  overlay.addEventListener("click", close);
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(overlay);
+}
+
 function buildItem(item) {
   const row = document.createElement("div");
   row.className = "item" + (item.bought ? " done" : "");
@@ -289,6 +402,32 @@ function buildItem(item) {
     appendLinkified(item.note, note);
     body.appendChild(note);
   }
+  const href = safeLink(item.link);
+  if (href) {
+    const a = document.createElement("a");
+    a.className = "linkbtn";
+    a.href = href;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.textContent = "🔗 " + new URL(href).hostname.replace(/^www\./, "");
+    body.appendChild(a);
+  }
+
+  let thumb = null;
+  if (
+    typeof item.image === "string" &&
+    item.image.startsWith("data:image/jpeg;base64,")
+  ) {
+    thumb = document.createElement("button");
+    thumb.type = "button";
+    thumb.className = "thumb";
+    thumb.setAttribute("aria-label", "Foto vergroten");
+    const img = document.createElement("img");
+    img.src = item.image;
+    img.alt = "";
+    thumb.appendChild(img);
+    thumb.addEventListener("click", () => openLightbox(item.image));
+  }
 
   const del = document.createElement("button");
   del.type = "button";
@@ -312,7 +451,7 @@ function buildItem(item) {
     }
   });
 
-  row.append(tick, body, del);
+  row.append(tick, body, ...(thumb ? [thumb] : []), del);
   return row;
 }
 
@@ -389,6 +528,14 @@ function addWish() {
     $("what").focus();
     return;
   }
+  const link = normalizeLink($("link").value);
+  if (link === null) {
+    showNotice(
+      "Die link lijkt niet te kloppen. Plak de volledige link van de winkelpagina, bv. https://www.bol.com/…",
+    );
+    $("link").focus();
+    return;
+  }
   const who = $("who").value.trim() || me || "Iemand";
   const occ = $("occ").value;
   LS.set("wl_who", who);
@@ -401,6 +548,8 @@ function addWish() {
       who,
       occ,
       note: $("note").value.trim(),
+      link,
+      image: pendingImage,
       bought: false,
       boughtBy: "",
       createdAt: Date.now(),
@@ -408,12 +557,17 @@ function addWish() {
     .then(() => {
       $("what").value = "";
       $("note").value = "";
+      $("link").value = "";
+      pendingImage = "";
+      renderPhotoPreview();
       $("what").focus();
       showNotice(storageNotice());
     })
     .catch(() =>
       showNotice(
-        "Die wens kon niet worden toegevoegd. Controleer je internetverbinding en de Firestore-regels.",
+        store && store.shared
+          ? "Die wens kon niet worden toegevoegd. Controleer je internetverbinding en de Firestore-regels."
+          : "Die wens kon niet worden opgeslagen. De opslagruimte van deze browser is vol: kies een kleinere foto of verwijder wensen.",
       ),
     )
     .finally(() => {
@@ -455,12 +609,25 @@ async function start() {
     if (!LS.get("wl_who")) $("who").value = me;
   });
   $("add").addEventListener("click", addWish);
-  ["who", "what", "note"].forEach((id) =>
+  ["who", "what", "link", "note"].forEach((id) =>
     $(id).addEventListener("keydown", (e) => {
       if (e.key === "Enter") addWish();
     }),
   );
   $("share").addEventListener("click", copyShareLink);
+  $("photo").addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      pendingImage = await resizeImage(file);
+      showNotice(storageNotice());
+    } catch (err) {
+      pendingImage = "";
+      showNotice("Die foto kon niet worden gelezen. Probeer een andere foto.");
+    }
+    renderPhotoPreview();
+  });
 
   renderCountdowns();
   renderTabs();

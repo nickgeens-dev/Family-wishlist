@@ -15,6 +15,7 @@
   <body>
     <header class="top">
       <div class="top-in">
+        <div class="deco" aria-hidden="true">🎁 ⭐ 🎄</div>
         <h1>Familie-verlanglijstje</h1>
         <p class="sub">
           Sinterklaas en Kerstmis. Zet een wens op de lijst en vink hem af als
@@ -25,7 +26,16 @@
           Kopieer de link om met de familie te delen
         </button>
       </div>
-      <div class="ribbon" aria-hidden="true"></div>
+      <svg
+        class="wave"
+        viewBox="0 0 1440 40"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <path
+          d="M0 20 Q 120 0 240 20 T 480 20 T 720 20 T 960 20 T 1200 20 T 1440 20 V40 H0 Z"
+        />
+      </svg>
     </header>
 
     <main class="wrap">
@@ -77,11 +87,33 @@
           />
         </div>
         <div class="field">
-          <label class="lbl" for="note">Opmerking of link (optioneel)</label>
+          <label class="lbl" for="link"
+            >Link naar het product (optioneel)</label
+          >
+          <input
+            type="text"
+            id="link"
+            placeholder="bv. https://www.bol.com/…"
+            maxlength="500"
+            autocomplete="off"
+            inputmode="url"
+            autocapitalize="off"
+          />
+        </div>
+        <div class="field">
+          <span class="lbl">Foto (optioneel)</span>
+          <div class="photo-row">
+            <input type="file" id="photo" class="sr" accept="image/*" />
+            <label class="filebtn" for="photo">📷 Foto kiezen</label>
+            <div id="photoPreview" class="photo-preview"></div>
+          </div>
+        </div>
+        <div class="field">
+          <label class="lbl" for="note">Opmerking (optioneel)</label>
           <input
             type="text"
             id="note"
-            placeholder="Maat, kleur, link naar de winkel"
+            placeholder="Maat, kleur, enz."
             maxlength="300"
             autocomplete="off"
           />
