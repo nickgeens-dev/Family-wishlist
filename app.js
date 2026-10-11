@@ -144,7 +144,7 @@ async function firebaseAdapter(listId) {
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-const OCCASIONS = { sint: "Sinterklaas", xmas: "Christmas", both: "Both" };
+const OCCASIONS = { sint: "Sinterklaas", xmas: "Kerstmis", both: "Allebei" };
 let store = null;
 let items = [];
 let filter = "all";
@@ -172,14 +172,14 @@ function renderCountdowns() {
   const box = $("countdowns");
   box.textContent = "";
   [
-    ["Sinterklaas", 11, 5],
-    ["Christmas", 11, 25],
+    ["Sinterklaas", 11, 6],
+    ["Kerstmis", 11, 25],
   ].forEach(([name, month, day]) => {
     const n = daysUntil(month, day);
     const chip = document.createElement("span");
     chip.className = "chip";
     const strong = document.createElement("b");
-    strong.textContent = n === 0 ? "today" : n === 1 ? "1 day" : n + " days";
+    strong.textContent = n === 0 ? "vandaag" : n === 1 ? "1 dag" : n + " dagen";
     chip.append(name + ": ", strong);
     box.appendChild(chip);
   });
@@ -193,9 +193,9 @@ function renderTabs() {
   const nav = $("tabs");
   nav.textContent = "";
   [
-    ["all", "Everything"],
+    ["all", "Alles"],
     ["sint", "Sinterklaas"],
-    ["xmas", "Christmas"],
+    ["xmas", "Kerstmis"],
   ].forEach(([key, label]) => {
     const count = items.filter(
       (it) => key === "all" || it.occ === key || it.occ === "both",
@@ -228,8 +228,8 @@ function renderProgress(visible) {
   const text = document.createElement("p");
   text.className = "ptxt";
   text.textContent =
-    `${done} of ${visible.length} bought` +
-    (done === visible.length ? ". All done!" : "");
+    `${done} van ${visible.length} gekocht` +
+    (done === visible.length ? ". Alles gekocht!" : "");
   box.append(bar, text);
 }
 
@@ -262,7 +262,7 @@ function buildItem(item) {
   tick.textContent = item.bought ? "✓" : "";
   tick.setAttribute(
     "aria-label",
-    item.bought ? "Mark as not bought" : "Mark as bought",
+    item.bought ? "Markeer als niet gekocht" : "Markeer als gekocht",
   );
   tick.addEventListener("click", () => toggleBought(item));
 
@@ -275,11 +275,11 @@ function buildItem(item) {
   meta.className = "meta";
   const tag = document.createElement("span");
   tag.className = "tag " + (OCCASIONS[item.occ] ? item.occ : "both");
-  tag.textContent = OCCASIONS[item.occ] || "Both";
+  tag.textContent = OCCASIONS[item.occ] || "Allebei";
   meta.appendChild(tag);
   if (item.bought && item.boughtBy) {
     const by = document.createElement("span");
-    by.textContent = "bought by " + item.boughtBy;
+    by.textContent = "gekocht door " + item.boughtBy;
     meta.appendChild(by);
   }
   body.append(what, meta);
@@ -294,8 +294,8 @@ function buildItem(item) {
   del.type = "button";
   const armed = pendingDelete === item.id;
   del.className = "del" + (armed ? " sure" : "");
-  del.textContent = armed ? "Delete?" : "✕";
-  del.setAttribute("aria-label", "Delete wish");
+  del.textContent = armed ? "Verwijderen?" : "✕";
+  del.setAttribute("aria-label", "Wens verwijderen");
   del.addEventListener("click", () => {
     if (pendingDelete === item.id) {
       pendingDelete = null;
@@ -327,8 +327,8 @@ function render() {
     const p = document.createElement("p");
     p.className = "empty";
     p.textContent = items.length
-      ? "Nothing here yet for this occasion."
-      : "No wishes yet. Add the first one above.";
+      ? "Hier staat nog niets voor deze gelegenheid."
+      : "Nog geen wensen. Voeg hierboven de eerste toe.";
     list.appendChild(p);
     return;
   }
@@ -336,7 +336,7 @@ function render() {
   // Group by person (case-insensitive), people sorted A to Z
   const groups = new Map();
   visible.forEach((it) => {
-    const name = (it.who || "Someone").trim();
+    const name = (it.who || "Iemand").trim();
     const key = name.toLowerCase();
     if (!groups.has(key)) groups.set(key, { name, items: [] });
     groups.get(key).items.push(it);
@@ -355,7 +355,7 @@ function render() {
       const h3 = document.createElement("h3");
       const done = group.items.filter((it) => it.bought).length;
       const small = document.createElement("small");
-      small.textContent = `${done}/${group.items.length} bought`;
+      small.textContent = `${done}/${group.items.length} gekocht`;
       h3.append(group.name, small);
       section.appendChild(h3);
       group.items.forEach((it) => section.appendChild(buildItem(it)));
@@ -372,13 +372,15 @@ function toggleBought(item) {
     .update(item.id, { bought: next, boughtBy: next ? me : "" })
     .catch(() =>
       showNotice(
-        "Could not save that change. Check your internet connection and try again.",
+        "Die wijziging kon niet worden opgeslagen. Controleer je internetverbinding en probeer opnieuw.",
       ),
     );
 }
 
 function removeItem(item) {
-  store.remove(item.id).catch(() => showNotice("Could not delete that wish."));
+  store
+    .remove(item.id)
+    .catch(() => showNotice("Die wens kon niet worden verwijderd."));
 }
 
 function addWish() {
@@ -387,7 +389,7 @@ function addWish() {
     $("what").focus();
     return;
   }
-  const who = $("who").value.trim() || me || "Someone";
+  const who = $("who").value.trim() || me || "Iemand";
   const occ = $("occ").value;
   LS.set("wl_who", who);
   LS.set("wl_occ", occ);
@@ -411,7 +413,7 @@ function addWish() {
     })
     .catch(() =>
       showNotice(
-        "Could not add that wish. Check your internet connection and the Firestore rules.",
+        "Die wens kon niet worden toegevoegd. Controleer je internetverbinding en de Firestore-regels.",
       ),
     )
     .finally(() => {
@@ -422,7 +424,7 @@ function addWish() {
 function storageNotice() {
   return store && store.shared
     ? ""
-    : "Preview mode: this list is only saved in this browser. To share it with family, set up Firebase (see README.md).";
+    : "Voorbeeldmodus: deze lijst wordt alleen in deze browser bewaard. Stel Firebase in om hem met de familie te delen (zie README.md).";
 }
 
 async function copyShareLink() {
@@ -430,9 +432,9 @@ async function copyShareLink() {
   const original = button.textContent;
   try {
     await navigator.clipboard.writeText(location.href);
-    button.textContent = "Link copied";
+    button.textContent = "Link gekopieerd";
   } catch (e) {
-    window.prompt("Copy this link:", location.href);
+    window.prompt("Kopieer deze link:", location.href);
   }
   setTimeout(() => {
     button.textContent = original;
@@ -472,7 +474,7 @@ async function start() {
     console.error(e);
     store = localAdapter(listId);
     showNotice(
-      "Could not reach Firebase, so this list is only saved in this browser for now.",
+      "Firebase is niet bereikbaar, dus deze lijst wordt voorlopig alleen in deze browser bewaard.",
     );
   }
 
@@ -485,7 +487,7 @@ async function start() {
     },
     () =>
       showNotice(
-        "Lost connection to the shared list. Reload the page to reconnect.",
+        "De verbinding met de gedeelde lijst is verbroken. Laad de pagina opnieuw om opnieuw te verbinden.",
       ),
   );
 }

@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="nl">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Family wishlist</title>
+    <title>Familie-verlanglijstje</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,13 +15,14 @@
   <body>
     <header class="top">
       <div class="top-in">
-        <h1>Family wishlist</h1>
+        <h1>Familie-verlanglijstje</h1>
         <p class="sub">
-          Sinterklaas and Christmas. Add a wish, tick it off when it's bought.
+          Sinterklaas en Kerstmis. Zet een wens op de lijst en vink hem af als
+          hij gekocht is.
         </p>
         <div class="chips" id="countdowns"></div>
         <button class="share" id="share" type="button">
-          Copy link to share with family
+          Kopieer de link om met de familie te delen
         </button>
       </div>
       <div class="ribbon" aria-hidden="true"></div>
@@ -32,11 +33,11 @@
 
       <section class="panel">
         <label class="inline" for="me">
-          <span>Your name</span>
+          <span>Jouw naam</span>
           <input
             type="text"
             id="me"
-            placeholder="Shown next to items you buy"
+            placeholder="Komt te staan bij wat je koopt"
             maxlength="30"
             autocomplete="given-name"
           />
@@ -44,56 +45,56 @@
       </section>
 
       <section class="panel" id="addpanel">
-        <h2>Add a wish</h2>
+        <h2>Wens toevoegen</h2>
         <div class="grid2">
           <div>
-            <label class="lbl" for="who">Who is it for?</label>
+            <label class="lbl" for="who">Voor wie is het?</label>
             <input
               type="text"
               id="who"
-              placeholder="e.g. Emma"
+              placeholder="bv. Emma"
               maxlength="30"
               autocomplete="off"
             />
           </div>
           <div>
-            <label class="lbl" for="occ">Occasion</label>
+            <label class="lbl" for="occ">Gelegenheid</label>
             <select id="occ">
-              <option value="both">Both</option>
+              <option value="both">Allebei</option>
               <option value="sint">Sinterklaas</option>
-              <option value="xmas">Christmas</option>
+              <option value="xmas">Kerstmis</option>
             </select>
           </div>
         </div>
         <div class="field">
-          <label class="lbl" for="what">What would they like?</label>
+          <label class="lbl" for="what">Wat zou diegene graag krijgen?</label>
           <input
             type="text"
             id="what"
-            placeholder="e.g. LEGO Technic set"
+            placeholder="bv. LEGO Technic-set"
             maxlength="120"
             autocomplete="off"
           />
         </div>
         <div class="field">
-          <label class="lbl" for="note">Note or link (optional)</label>
+          <label class="lbl" for="note">Opmerking of link (optioneel)</label>
           <input
             type="text"
             id="note"
-            placeholder="Size, colour, shop link"
+            placeholder="Maat, kleur, link naar de winkel"
             maxlength="300"
             autocomplete="off"
           />
         </div>
-        <button class="primary" id="add" type="button">Add to list</button>
+        <button class="primary" id="add" type="button">
+          Toevoegen aan de lijst
+        </button>
       </section>
 
-      <nav class="tabs" id="tabs" aria-label="Filter by occasion"></nav>
+      <nav class="tabs" id="tabs" aria-label="Filter op gelegenheid"></nav>
       <div id="progress"></div>
-      <div id="list"><p class="empty">Loading the list…</p></div>
+      <div id="list"><p class="empty">De lijst wordt geladen…</p></div>
     </main>
-
-    <div>yes</div>
 
     <script type="module" src="app.js"></script>
   </body>
