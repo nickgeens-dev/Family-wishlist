@@ -8,11 +8,14 @@
 //  To share between family members, fill in firebaseConfig below (see README.md).
 // ============================================================================
 
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyD-ue_ow7F2eyL1fy-BUBbqv94Vij4tOUs",
+  authDomain: "family-wishlist-639a0.firebaseapp.com",
+  projectId: "family-wishlist-639a0",
+  appId: "1:278445165229:web:81fcfdd690497ed8275424",
 };
 
 const FIREBASE_SDK = "https://www.gstatic.com/firebasejs/10.12.2/";
