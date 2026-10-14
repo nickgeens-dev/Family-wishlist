@@ -8,9 +8,6 @@
 //  To share between family members, fill in firebaseConfig below (see README.md).
 // ============================================================================
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-
 const firebaseConfig = {
   apiKey: "AIzaSyD-ue_ow7F2eyL1fy-BUBbqv94Vij4tOUs",
   authDomain: "family-wishlist-639a0.firebaseapp.com",
