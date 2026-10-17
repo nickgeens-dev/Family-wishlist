@@ -117,9 +117,6 @@ function localAdapter(listId) {
     async remove(id) {
       save(read().filter((it) => it.id !== id));
     },
-    async put(id, data) {
-      save([...read().filter((it) => it.id !== id), { id, ...data }]);
-    },
   };
 }
 
@@ -155,7 +152,6 @@ async function firebaseAdapter(listId) {
         new Promise((resolve) => setTimeout(resolve, 4000)),
       ]),
     remove: (id) => fs.deleteDoc(fs.doc(col, id)),
-    put: (id, data) => fs.setDoc(fs.doc(col, id), data),
   };
 }
 
@@ -888,114 +884,6 @@ async function copyShareLink() {
 }
 
 // ---------------------------------------------------------------------------
-// Backup: download the whole list as a file, and put it back from that file
-// ---------------------------------------------------------------------------
-function downloadBackup() {
-  if (!items.length) {
-    showNotice("Er staat nog niets op de lijst om te bewaren.");
-    return;
-  }
-  const data = {
-    app: "family-wishlist",
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    items,
-  };
-  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download =
-    "verlanglijstje-backup-" + new Date().toISOString().slice(0, 10) + ".json";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  showNotice(
-    `Back-up gedownload (${items.length} ${items.length === 1 ? "wens" : "wensen"}). Bewaar het bestand op een veilige plek.`,
-  );
-}
-
-// Accepts only what the database rules accept; anything else is dropped
-function cleanItem(x) {
-  if (!x || typeof x !== "object") return null;
-  const what = String(x.what || "")
-    .trim()
-    .slice(0, 120);
-  if (!what) return null;
-  let link = normalizeLink(String(x.link || "")) || "";
-  if (link.length > 500) link = "";
-  const image =
-    typeof x.image === "string" &&
-    x.image.startsWith("data:image/jpeg;base64,") &&
-    x.image.length <= MAX_IMAGE_CHARS
-      ? x.image
-      : "";
-  return {
-    what,
-    who:
-      String(x.who || "")
-        .trim()
-        .slice(0, 30) || "Iemand",
-    occ: OCCASIONS[x.occ] ? x.occ : "both",
-    note: String(x.note || "").slice(0, 300),
-    link,
-    image,
-    bought: x.bought === true,
-    boughtBy: String(x.boughtBy || "").slice(0, 30),
-    createdAt: Number(x.createdAt) || Date.now(),
-  };
-}
-
-async function restoreBackup(file) {
-  let data;
-  try {
-    data = JSON.parse(await file.text());
-  } catch (e) {
-    data = null;
-  }
-  const list = Array.isArray(data)
-    ? data
-    : data && Array.isArray(data.items)
-      ? data.items
-      : null;
-  if (!list) {
-    showNotice("Dat bestand is geen geldige back-up van dit verlanglijstje.");
-    return;
-  }
-  if (
-    !window.confirm(
-      `Back-up terugzetten? ${list.length} wensen uit het bestand worden op de lijst gezet. Wensen die al bestaan worden vervangen door de versie uit de back-up.`,
-    )
-  )
-    return;
-
-  let done = 0,
-    skipped = 0;
-  for (const raw of list) {
-    const item = cleanItem(raw);
-    if (!item) {
-      skipped++;
-      continue;
-    }
-    const id =
-      raw && /^[A-Za-z0-9_-]{1,60}$/.test(String(raw.id || ""))
-        ? String(raw.id)
-        : uid();
-    try {
-      await store.put(id, item);
-      done++;
-    } catch (e) {
-      skipped++;
-    }
-  }
-  showNotice(
-    `${done} ${done === 1 ? "wens" : "wensen"} teruggezet` +
-      (skipped ? `, ${skipped} overgeslagen.` : "."),
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
 async function start() {
@@ -1015,12 +903,6 @@ async function start() {
     }),
   );
   $("share").addEventListener("click", copyShareLink);
-  $("export").addEventListener("click", downloadBackup);
-  $("importFile").addEventListener("change", (e) => {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = "";
-    if (file) restoreBackup(file);
-  });
   $("photo").addEventListener("change", async (e) => {
     const file = e.target.files && e.target.files[0];
     e.target.value = "";

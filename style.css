@@ -542,20 +542,7 @@ a:focus-visible {
   background: #fff;
 }
 
-/* ---- backup ---- */
-.backup {
-  margin-top: 28px;
-}
-.hint {
-  margin: 0 0 12px;
-  font-size: 0.9rem;
-  color: var(--muted);
-}
-.btnrow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
+/* ---- secondary button ---- */
 .secondary {
   display: inline-block;
   padding: 10px 14px;
@@ -569,10 +556,6 @@ a:focus-visible {
 }
 .secondary:hover {
   border-color: var(--pine);
-}
-.sr:focus-visible + .secondary {
-  outline: 3px solid var(--gold);
-  outline-offset: 1px;
 }
 
 /* ---- editing ---- */
