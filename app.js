@@ -5,18 +5,23 @@
 //   1. Firebase configured  -> everyone shares one live list (no accounts needed)
 //   2. Firebase NOT set up  -> list is kept in this browser only (localStorage)
 //
-//  To share between family members, fill in firebaseConfig below (see README.md).
+//  To share between family members, fill in firebase-config.js (see README.md).
 // ============================================================================
 
-const firebaseConfig = {
-  apiKey: "AIzaSyD-ue_ow7F2eyL1fy-BUBbqv94Vij4tOUs",
-  authDomain: "family-wishlist-639a0.firebaseapp.com",
-  projectId: "family-wishlist-639a0",
-  appId: "1:278445165229:web:81fcfdd690497ed8275424",
-};
+// Your Firebase settings live in firebase-config.js. If that file is missing or
+// still has the YOUR_ placeholders, the site starts in preview mode instead of breaking.
+let firebaseConfig = null;
+try {
+  ({ firebaseConfig } = await import("./firebase-config.js"));
+} catch (e) {
+  /* no config file yet */
+}
 
 const FIREBASE_SDK = "https://www.gstatic.com/firebasejs/10.12.2/";
-const firebaseIsConfigured = !firebaseConfig.projectId.startsWith("YOUR_");
+const firebaseIsConfigured =
+  !!firebaseConfig &&
+  typeof firebaseConfig.projectId === "string" &&
+  !firebaseConfig.projectId.startsWith("YOUR_");
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -112,6 +117,9 @@ function localAdapter(listId) {
     async remove(id) {
       save(read().filter((it) => it.id !== id));
     },
+    async put(id, data) {
+      save([...read().filter((it) => it.id !== id), { id, ...data }]);
+    },
   };
 }
 
@@ -141,8 +149,13 @@ async function firebaseAdapter(listId) {
         fs.addDoc(col, data),
         new Promise((resolve) => setTimeout(resolve, 4000)),
       ]),
-    update: (id, patch) => fs.updateDoc(fs.doc(col, id), patch),
+    update: (id, patch) =>
+      Promise.race([
+        fs.updateDoc(fs.doc(col, id), patch),
+        new Promise((resolve) => setTimeout(resolve, 4000)),
+      ]),
     remove: (id) => fs.deleteDoc(fs.doc(col, id)),
+    put: (id, data) => fs.setDoc(fs.doc(col, id), data),
   };
 }
 
@@ -156,6 +169,9 @@ let filter = "all";
 let pendingDelete = null;
 let me = LS.get("wl_me");
 let pendingImage = ""; // photo chosen in the form, as a small JPEG data URL
+let editing = null; // draft of the wish that is being edited: { id, who, occ, what, link, note, image }
+let savingEdit = false;
+let editError = ""; // message shown inside the edit form (the top banner can be out of view)
 const MAX_IMAGE_CHARS = 150000; // keeps one wish well below Firestore's 1 MiB limit
 
 // ---------------------------------------------------------------------------
@@ -366,6 +382,7 @@ function openLightbox(src) {
 }
 
 function buildItem(item) {
+  if (editing && editing.id === item.id) return buildEditor();
   const row = document.createElement("div");
   row.className = "item" + (item.bought ? " done" : "");
 
@@ -451,7 +468,18 @@ function buildItem(item) {
     }
   });
 
-  row.append(tick, body, ...(thumb ? [thumb] : []), del);
+  const edit = document.createElement("button");
+  edit.type = "button";
+  edit.className = "edit";
+  edit.textContent = "✎";
+  edit.setAttribute("aria-label", "Wens bewerken");
+  edit.addEventListener("click", () => startEdit(item));
+
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  actions.append(edit, del);
+
+  row.append(tick, body, ...(thumb ? [thumb] : []), actions);
   return row;
 }
 
@@ -500,6 +528,270 @@ function render() {
       group.items.forEach((it) => section.appendChild(buildItem(it)));
       list.appendChild(section);
     });
+}
+
+// ---------------------------------------------------------------------------
+// Editing a wish
+// ---------------------------------------------------------------------------
+function showEditError(text, focusId) {
+  editError = text;
+  render();
+  const el = $(focusId);
+  if (el) el.focus();
+}
+
+function startEdit(item) {
+  if (editing && editing.id !== item.id) {
+    showEditError(
+      "Sla eerst de wens op die je aan het bewerken bent, of annuleer.",
+      "edit-what",
+    );
+    return;
+  }
+  pendingDelete = null;
+  editError = "";
+  editing = {
+    id: item.id,
+    who: item.who || "",
+    occ: OCCASIONS[item.occ] ? item.occ : "both",
+    what: item.what || "",
+    link: item.link || "",
+    note: item.note || "",
+    image:
+      typeof item.image === "string" &&
+      item.image.startsWith("data:image/jpeg;base64,")
+        ? item.image
+        : "",
+  };
+  render();
+  const first = $("edit-what");
+  if (first) first.focus();
+}
+
+function cancelEdit() {
+  editing = null;
+  editError = "";
+  showNotice(storageNotice());
+  render();
+}
+
+function labeled(id, text, input) {
+  const wrap = document.createElement("div");
+  wrap.className = "field";
+  const label = document.createElement("label");
+  label.className = "lbl";
+  label.htmlFor = id;
+  label.textContent = text;
+  input.id = id;
+  wrap.append(label, input);
+  return wrap;
+}
+
+function editInput(key, max) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.maxLength = max;
+  input.autocomplete = "off";
+  input.value = editing[key];
+  input.addEventListener("input", () => {
+    editing[key] = input.value;
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") saveEdit();
+    else if (e.key === "Escape") cancelEdit();
+  });
+  return input;
+}
+
+function buildEditor() {
+  const box = document.createElement("div");
+  box.className = "item editing";
+  const form = document.createElement("div");
+  form.className = "editform";
+
+  const title = document.createElement("h4");
+  title.textContent = "Wens bewerken";
+  form.appendChild(title);
+
+  if (editError) {
+    const problem = document.createElement("p");
+    problem.className = "notice";
+    problem.setAttribute("role", "alert");
+    problem.textContent = editError;
+    form.appendChild(problem);
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "grid2";
+  const who = labeled("edit-who", "Voor wie is het?", editInput("who", 30));
+  who.classList.remove("field");
+  const select = document.createElement("select");
+  [
+    ["both", "Allebei"],
+    ["sint", "Sinterklaas"],
+    ["xmas", "Kerstmis"],
+  ].forEach(([value, text]) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = text;
+    select.appendChild(option);
+  });
+  select.value = editing.occ;
+  select.addEventListener("change", () => {
+    editing.occ = select.value;
+  });
+  const occ = labeled("edit-occ", "Gelegenheid", select);
+  occ.classList.remove("field");
+  grid.append(who, occ);
+  form.appendChild(grid);
+
+  form.appendChild(
+    labeled(
+      "edit-what",
+      "Wat zou diegene graag krijgen?",
+      editInput("what", 120),
+    ),
+  );
+  form.appendChild(
+    labeled(
+      "edit-link",
+      "Link naar het product (optioneel)",
+      editInput("link", 500),
+    ),
+  );
+  form.appendChild(
+    labeled("edit-note", "Opmerking (optioneel)", editInput("note", 300)),
+  );
+
+  // photo: keep, replace or remove
+  const photoField = document.createElement("div");
+  photoField.className = "field";
+  const photoLabel = document.createElement("span");
+  photoLabel.className = "lbl";
+  photoLabel.textContent = "Foto (optioneel)";
+  const row = document.createElement("div");
+  row.className = "photo-row";
+  const file = document.createElement("input");
+  file.type = "file";
+  file.id = "edit-photo";
+  file.className = "sr";
+  file.accept = "image/*";
+  file.addEventListener("change", async () => {
+    const chosen = file.files && file.files[0];
+    if (!chosen) return;
+    const draft = editing;
+    try {
+      draft.image = await resizeImage(chosen);
+      editError = "";
+    } catch (err) {
+      editError = "Die foto kon niet worden gelezen. Probeer een andere foto.";
+    }
+    if (editing === draft) render();
+  });
+  const pick = document.createElement("label");
+  pick.className = "filebtn";
+  pick.htmlFor = "edit-photo";
+  pick.textContent = editing.image ? "📷 Andere foto kiezen" : "📷 Foto kiezen";
+  const preview = document.createElement("div");
+  preview.className = "photo-preview";
+  if (editing.image) {
+    const img = document.createElement("img");
+    img.src = editing.image;
+    img.alt = "Huidige foto";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Foto verwijderen";
+    remove.addEventListener("click", () => {
+      editing.image = "";
+      render();
+    });
+    preview.append(img, remove);
+  }
+  row.append(file, pick, preview);
+  photoField.append(photoLabel, row);
+  form.appendChild(photoField);
+
+  const buttons = document.createElement("div");
+  buttons.className = "editactions";
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "primary";
+  save.textContent = "Opslaan";
+  save.addEventListener("click", saveEdit);
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "secondary";
+  cancel.textContent = "Annuleren";
+  cancel.addEventListener("click", cancelEdit);
+  buttons.append(save, cancel);
+  form.appendChild(buttons);
+
+  box.appendChild(form);
+  return box;
+}
+
+function saveEdit() {
+  const draft = editing;
+  if (!draft || savingEdit) return;
+  const what = draft.what.trim();
+  if (!what) {
+    showEditError("Vul in wat diegene graag wil krijgen.", "edit-what");
+    return;
+  }
+  const link = normalizeLink(draft.link);
+  if (link === null) {
+    showEditError(
+      "Die link lijkt niet te kloppen. Plak de volledige link van de winkelpagina, bv. https://www.bol.com/…",
+      "edit-link",
+    );
+    return;
+  }
+  editError = "";
+  savingEdit = true;
+  store
+    .update(draft.id, {
+      what,
+      who: draft.who.trim() || "Iemand",
+      occ: draft.occ,
+      note: draft.note.trim(),
+      link,
+      image: draft.image,
+    })
+    .then(() => {
+      if (editing && editing.id === draft.id) editing = null;
+      showNotice(storageNotice());
+      render();
+    })
+    .catch(() => {
+      if (editing && editing.id === draft.id) {
+        showEditError(
+          store && store.shared
+            ? "De wijziging kon niet worden opgeslagen. Controleer je internetverbinding en de Firestore-regels."
+            : "De wijziging kon niet worden opgeslagen. De opslagruimte van deze browser is vol: kies een kleinere foto.",
+          "edit-what",
+        );
+      }
+    })
+    .finally(() => {
+      savingEdit = false;
+    });
+}
+
+// Re-draws the list after a change from someone else without losing the cursor in the edit form
+function renderKeepingFocus() {
+  const active = document.activeElement;
+  const id =
+    active && active.id && active.id.startsWith("edit-") ? active.id : null;
+  const range =
+    id && typeof active.selectionStart === "number"
+      ? [active.selectionStart, active.selectionEnd]
+      : null;
+  render();
+  if (!id) return;
+  const el = $(id);
+  if (!el) return;
+  el.focus();
+  if (range && el.setSelectionRange) el.setSelectionRange(range[0], range[1]);
 }
 
 // ---------------------------------------------------------------------------
@@ -596,6 +888,114 @@ async function copyShareLink() {
 }
 
 // ---------------------------------------------------------------------------
+// Backup: download the whole list as a file, and put it back from that file
+// ---------------------------------------------------------------------------
+function downloadBackup() {
+  if (!items.length) {
+    showNotice("Er staat nog niets op de lijst om te bewaren.");
+    return;
+  }
+  const data = {
+    app: "family-wishlist",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    items,
+  };
+  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download =
+    "verlanglijstje-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showNotice(
+    `Back-up gedownload (${items.length} ${items.length === 1 ? "wens" : "wensen"}). Bewaar het bestand op een veilige plek.`,
+  );
+}
+
+// Accepts only what the database rules accept; anything else is dropped
+function cleanItem(x) {
+  if (!x || typeof x !== "object") return null;
+  const what = String(x.what || "")
+    .trim()
+    .slice(0, 120);
+  if (!what) return null;
+  let link = normalizeLink(String(x.link || "")) || "";
+  if (link.length > 500) link = "";
+  const image =
+    typeof x.image === "string" &&
+    x.image.startsWith("data:image/jpeg;base64,") &&
+    x.image.length <= MAX_IMAGE_CHARS
+      ? x.image
+      : "";
+  return {
+    what,
+    who:
+      String(x.who || "")
+        .trim()
+        .slice(0, 30) || "Iemand",
+    occ: OCCASIONS[x.occ] ? x.occ : "both",
+    note: String(x.note || "").slice(0, 300),
+    link,
+    image,
+    bought: x.bought === true,
+    boughtBy: String(x.boughtBy || "").slice(0, 30),
+    createdAt: Number(x.createdAt) || Date.now(),
+  };
+}
+
+async function restoreBackup(file) {
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch (e) {
+    data = null;
+  }
+  const list = Array.isArray(data)
+    ? data
+    : data && Array.isArray(data.items)
+      ? data.items
+      : null;
+  if (!list) {
+    showNotice("Dat bestand is geen geldige back-up van dit verlanglijstje.");
+    return;
+  }
+  if (
+    !window.confirm(
+      `Back-up terugzetten? ${list.length} wensen uit het bestand worden op de lijst gezet. Wensen die al bestaan worden vervangen door de versie uit de back-up.`,
+    )
+  )
+    return;
+
+  let done = 0,
+    skipped = 0;
+  for (const raw of list) {
+    const item = cleanItem(raw);
+    if (!item) {
+      skipped++;
+      continue;
+    }
+    const id =
+      raw && /^[A-Za-z0-9_-]{1,60}$/.test(String(raw.id || ""))
+        ? String(raw.id)
+        : uid();
+    try {
+      await store.put(id, item);
+      done++;
+    } catch (e) {
+      skipped++;
+    }
+  }
+  showNotice(
+    `${done} ${done === 1 ? "wens" : "wensen"} teruggezet` +
+      (skipped ? `, ${skipped} overgeslagen.` : "."),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
 async function start() {
@@ -615,6 +1015,12 @@ async function start() {
     }),
   );
   $("share").addEventListener("click", copyShareLink);
+  $("export").addEventListener("click", downloadBackup);
+  $("importFile").addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (file) restoreBackup(file);
+  });
   $("photo").addEventListener("change", async (e) => {
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
@@ -650,7 +1056,14 @@ async function start() {
   store.subscribe(
     (list) => {
       items = list;
-      render();
+      if (editing && !items.some((it) => it.id === editing.id)) {
+        editing = null;
+        editError = "";
+        showNotice(
+          "De wens die je aan het bewerken was, is intussen verwijderd.",
+        );
+      }
+      renderKeepingFocus();
     },
     () =>
       showNotice(
