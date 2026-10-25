@@ -158,7 +158,26 @@ async function firebaseAdapter(listId) {
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-const OCCASIONS = { sint: "Sinterklaas", xmas: "Kerstmis", both: "Allebei" };
+const OCCASIONS = {
+  sint: "Sinterklaas",
+  xmas: "Kerstmis",
+  both: "Sint + Kerst",
+  bday: "Verjaardag",
+};
+const MONTHS = [
+  "januari",
+  "februari",
+  "maart",
+  "april",
+  "mei",
+  "juni",
+  "juli",
+  "augustus",
+  "september",
+  "oktober",
+  "november",
+  "december",
+];
 let store = null;
 let items = [];
 let filter = "all";
@@ -167,6 +186,7 @@ let me = LS.get("wl_me");
 let pendingImage = ""; // photo chosen in the form, as a small JPEG data URL
 let editing = null; // draft of the wish that is being edited: { id, who, occ, what, link, note, image }
 let savingEdit = false;
+let bdayAuto = false; // the birthday in the add form was filled in automatically from an earlier wish
 let editError = ""; // message shown inside the edit form (the top banner can be out of view)
 const MAX_IMAGE_CHARS = 150000; // keeps one wish well below Firestore's 1 MiB limit
 
@@ -185,6 +205,96 @@ function daysUntil(month, day) {
   let target = new Date(today.getFullYear(), month, day);
   if (target < today) target = new Date(today.getFullYear() + 1, month, day);
   return Math.round((target - today) / 86400000);
+}
+
+// ---------------------------------------------------------------------------
+// Birthdays: stored on a wish as "MM-DD" (day and month, no year)
+// ---------------------------------------------------------------------------
+const pad2 = (n) => String(n).padStart(2, "0");
+
+function parseBdate(value) {
+  const m = /^(\d{2})-(\d{2})$/.exec(value || "");
+  if (!m) return null;
+  const month = Number(m[1]),
+    day = Number(m[2]);
+  const test = new Date(2000, month - 1, day); // 2000 is a leap year, so 29 February is allowed
+  if (test.getMonth() !== month - 1 || test.getDate() !== day) return null;
+  return { month, day };
+}
+
+// month and day as strings from the two dropdowns; "" = nothing chosen, null = incomplete or impossible
+function bdateFromParts(month, day) {
+  if (!month && !day) return "";
+  if (!month || !day) return null;
+  const value = pad2(month) + "-" + pad2(day);
+  return parseBdate(value) ? value : null;
+}
+
+function matchesOccasion(item, key) {
+  if (key === "all") return true;
+  if (key === "bday") return item.occ === "bday";
+  return item.occ === key || item.occ === "both"; // "both" = Sinterklaas and Kerstmis
+}
+
+// The most recently saved birthday for a person, from any of their wishes
+function birthdayOf(name) {
+  const key = (name || "").trim().toLowerCase();
+  if (!key) return null;
+  let best = null;
+  items.forEach((it) => {
+    if ((it.who || "").trim().toLowerCase() !== key) return;
+    const b = parseBdate(it.bdate);
+    if (b && (!best || (it.createdAt || 0) > best.t))
+      best = { ...b, t: it.createdAt || 0 };
+  });
+  return best;
+}
+
+function birthdayText(b) {
+  const n = daysUntil(b.month - 1, b.day);
+  const when =
+    n === 0 ? "vandaag jarig! 🎉" : n === 1 ? "morgen" : "over " + n + " dagen";
+  return `🎂 ${b.day} ${MONTHS[b.month - 1]} · ${when}`;
+}
+
+function fillDateSelects(daySelect, monthSelect) {
+  const first = (select, text) => {
+    const o = document.createElement("option");
+    o.value = "";
+    o.textContent = text;
+    select.appendChild(o);
+  };
+  first(daySelect, "Dag");
+  for (let d = 1; d <= 31; d++) {
+    const o = document.createElement("option");
+    o.value = String(d);
+    o.textContent = String(d);
+    daySelect.appendChild(o);
+  }
+  first(monthSelect, "Maand");
+  MONTHS.forEach((name, i) => {
+    const o = document.createElement("option");
+    o.value = String(i + 1);
+    o.textContent = name;
+    monthSelect.appendChild(o);
+  });
+}
+
+function setDateSelects(daySelect, monthSelect, b) {
+  daySelect.value = b ? String(b.day) : "";
+  monthSelect.value = b ? String(b.month) : "";
+}
+
+// Shows the birthday question only for the occasion "Verjaardag" and fills in a date we already know
+function syncBdayFields() {
+  const on = $("occ").value === "bday";
+  $("bdayField").hidden = !on;
+  if (!on) return;
+  if (bdayAuto || (!$("bday-d").value && !$("bday-m").value)) {
+    const known = birthdayOf($("who").value.trim() || me);
+    setDateSelects($("bday-d"), $("bday-m"), known);
+    bdayAuto = !!known;
+  }
 }
 
 function renderCountdowns() {
@@ -212,7 +322,7 @@ function renderCountdowns() {
 }
 
 function inFilter(item) {
-  return filter === "all" || item.occ === filter || item.occ === "both";
+  return matchesOccasion(item, filter);
 }
 
 function renderTabs() {
@@ -222,10 +332,9 @@ function renderTabs() {
     ["all", "Alles"],
     ["sint", "Sinterklaas"],
     ["xmas", "Kerstmis"],
+    ["bday", "Verjaardagen"],
   ].forEach(([key, label]) => {
-    const count = items.filter(
-      (it) => key === "all" || it.occ === key || it.occ === "both",
-    ).length;
+    const count = items.filter((it) => matchesOccasion(it, key)).length;
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "tab";
@@ -401,7 +510,7 @@ function buildItem(item) {
   meta.className = "meta";
   const tag = document.createElement("span");
   tag.className = "tag " + (OCCASIONS[item.occ] ? item.occ : "both");
-  tag.textContent = OCCASIONS[item.occ] || "Allebei";
+  tag.textContent = OCCASIONS[item.occ] || OCCASIONS.both;
   meta.appendChild(tag);
   if (item.bought && item.boughtBy) {
     const by = document.createElement("span");
@@ -505,8 +614,17 @@ function render() {
     groups.get(key).items.push(it);
   });
 
+  // In the birthday tab the next birthday comes first; otherwise A to Z
+  const until = (group) => {
+    const b = birthdayOf(group.name);
+    return b ? daysUntil(b.month - 1, b.day) : Infinity;
+  };
   [...groups.values()]
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .sort(
+      (a, b) =>
+        (filter === "bday" ? until(a) - until(b) : 0) ||
+        a.name.localeCompare(b.name),
+    )
     .forEach((group) => {
       group.items.sort(
         (a, b) =>
@@ -520,6 +638,13 @@ function render() {
       const small = document.createElement("small");
       small.textContent = `${done}/${group.items.length} gekocht`;
       h3.append(group.name, small);
+      const birthday = birthdayOf(group.name);
+      if (birthday) {
+        const bd = document.createElement("small");
+        bd.className = "bd";
+        bd.textContent = birthdayText(birthday);
+        h3.appendChild(bd);
+      }
       section.appendChild(h3);
       group.items.forEach((it) => section.appendChild(buildItem(it)));
       list.appendChild(section);
@@ -546,7 +671,10 @@ function startEdit(item) {
   }
   pendingDelete = null;
   editError = "";
+  const known = parseBdate(item.bdate);
   editing = {
+    bm: known ? String(known.month) : "",
+    bd: known ? String(known.day) : "",
     id: item.id,
     who: item.who || "",
     occ: OCCASIONS[item.occ] ? item.occ : "both",
@@ -623,9 +751,10 @@ function buildEditor() {
   who.classList.remove("field");
   const select = document.createElement("select");
   [
-    ["both", "Allebei"],
+    ["both", "Sinterklaas en Kerstmis"],
     ["sint", "Sinterklaas"],
     ["xmas", "Kerstmis"],
+    ["bday", "Verjaardag"],
   ].forEach(([value, text]) => {
     const option = document.createElement("option");
     option.value = value;
@@ -635,11 +764,40 @@ function buildEditor() {
   select.value = editing.occ;
   select.addEventListener("change", () => {
     editing.occ = select.value;
+    renderKeepingFocus();
   });
   const occ = labeled("edit-occ", "Gelegenheid", select);
   occ.classList.remove("field");
   grid.append(who, occ);
   form.appendChild(grid);
+
+  if (editing.occ === "bday") {
+    const day = document.createElement("select");
+    const month = document.createElement("select");
+    fillDateSelects(day, month);
+    day.value = editing.bd;
+    month.value = editing.bm;
+    day.setAttribute("aria-label", "Dag");
+    month.setAttribute("aria-label", "Maand");
+    day.addEventListener("change", () => {
+      editing.bd = day.value;
+    });
+    month.addEventListener("change", () => {
+      editing.bm = month.value;
+    });
+    day.id = "edit-bday-d";
+    month.id = "edit-bday-m";
+    const dateField = document.createElement("div");
+    dateField.className = "field";
+    const dateLabel = document.createElement("span");
+    dateLabel.className = "lbl";
+    dateLabel.textContent = "Wanneer is die persoon jarig? (dag en maand)";
+    const dateRow = document.createElement("div");
+    dateRow.className = "grid2";
+    dateRow.append(day, month);
+    dateField.append(dateLabel, dateRow);
+    form.appendChild(dateField);
+  }
 
   form.appendChild(
     labeled(
@@ -742,18 +900,44 @@ function saveEdit() {
     );
     return;
   }
+  let bdate = "";
+  if (draft.occ === "bday") {
+    bdate = bdateFromParts(draft.bm, draft.bd);
+    if (bdate === null) {
+      showEditError(
+        "Kies zowel een dag als een maand voor de verjaardag, bv. 14 maart.",
+        "edit-bday-d",
+      );
+      return;
+    }
+  }
   editError = "";
   savingEdit = true;
+  const who = draft.who.trim() || "Iemand";
   store
     .update(draft.id, {
       what,
-      who: draft.who.trim() || "Iemand",
+      who,
       occ: draft.occ,
       note: draft.note.trim(),
       link,
       image: draft.image,
+      bdate,
     })
     .then(() => {
+      // keep the birthday the same on all wishes of this person
+      if (bdate) {
+        items.forEach((it) => {
+          if (
+            it.id !== draft.id &&
+            (it.who || "").trim().toLowerCase() === who.toLowerCase() &&
+            it.bdate &&
+            it.bdate !== bdate
+          ) {
+            store.update(it.id, { bdate }).catch(() => {});
+          }
+        });
+      }
       if (editing && editing.id === draft.id) editing = null;
       showNotice(storageNotice());
       render();
@@ -826,6 +1010,17 @@ function addWish() {
   }
   const who = $("who").value.trim() || me || "Iemand";
   const occ = $("occ").value;
+  let bdate = "";
+  if (occ === "bday") {
+    bdate = bdateFromParts($("bday-m").value, $("bday-d").value);
+    if (bdate === null) {
+      showNotice(
+        "Kies zowel een dag als een maand voor de verjaardag, bv. 14 maart.",
+      );
+      $("bday-d").focus();
+      return;
+    }
+  }
   LS.set("wl_who", who);
   LS.set("wl_occ", occ);
 
@@ -838,6 +1033,7 @@ function addWish() {
       note: $("note").value.trim(),
       link,
       image: pendingImage,
+      bdate,
       bought: false,
       boughtBy: "",
       createdAt: Date.now(),
@@ -850,6 +1046,10 @@ function addWish() {
       renderPhotoPreview();
       $("what").focus();
       showNotice(storageNotice());
+      // start the next wish with an empty date (or the one we already know for this person)
+      setDateSelects($("bday-d"), $("bday-m"), null);
+      bdayAuto = false;
+      syncBdayFields();
     })
     .catch(() =>
       showNotice(
@@ -887,9 +1087,17 @@ async function copyShareLink() {
 // Start
 // ---------------------------------------------------------------------------
 async function start() {
+  fillDateSelects($("bday-d"), $("bday-m"));
   $("me").value = me;
   $("who").value = LS.get("wl_who") || me;
-  if (LS.get("wl_occ")) $("occ").value = LS.get("wl_occ");
+  if (OCCASIONS[LS.get("wl_occ")]) $("occ").value = LS.get("wl_occ");
+  $("occ").addEventListener("change", syncBdayFields);
+  $("who").addEventListener("input", syncBdayFields);
+  ["bday-d", "bday-m"].forEach((id) =>
+    $(id).addEventListener("change", () => {
+      bdayAuto = false;
+    }),
+  );
 
   $("me").addEventListener("input", (e) => {
     me = e.target.value.trim();
@@ -938,6 +1146,7 @@ async function start() {
   store.subscribe(
     (list) => {
       items = list;
+      syncBdayFields();
       if (editing && !items.some((it) => it.id === editing.id)) {
         editing = null;
         editError = "";

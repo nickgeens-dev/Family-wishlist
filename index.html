@@ -18,8 +18,8 @@
         <div class="deco" aria-hidden="true">🎁 ⭐ 🎄</div>
         <h1>Familie-verlanglijstje</h1>
         <p class="sub">
-          Sinterklaas en Kerstmis. Zet een wens op de lijst en vink hem af als
-          hij gekocht is.
+          Sinterklaas, Kerstmis en verjaardagen. Zet een wens op de lijst en
+          vink hem af als hij gekocht is.
         </p>
         <div class="chips" id="countdowns"></div>
         <button class="share" id="share" type="button">
@@ -70,10 +70,18 @@
           <div>
             <label class="lbl" for="occ">Gelegenheid</label>
             <select id="occ">
-              <option value="both">Allebei</option>
+              <option value="both">Sinterklaas en Kerstmis</option>
               <option value="sint">Sinterklaas</option>
               <option value="xmas">Kerstmis</option>
+              <option value="bday">Verjaardag</option>
             </select>
+          </div>
+        </div>
+        <div class="field" id="bdayField" hidden>
+          <span class="lbl">Wanneer is die persoon jarig? (dag en maand)</span>
+          <div class="grid2">
+            <select id="bday-d" aria-label="Dag"></select>
+            <select id="bday-m" aria-label="Maand"></select>
           </div>
         </div>
         <div class="field">

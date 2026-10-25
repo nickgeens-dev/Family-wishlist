@@ -600,3 +600,26 @@ a:focus-visible {
   width: auto;
   flex: 1;
 }
+
+/* ---- birthdays ---- */
+:root {
+  --bday: #6b3fa0;
+  --bday-soft: #eee5f8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bday: #c4a3f0;
+    --bday-soft: #2f2440;
+  }
+}
+.tag.bday {
+  background: var(--bday-soft);
+  color: var(--bday);
+}
+.person h3 {
+  flex-wrap: wrap;
+}
+.person h3 small.bd {
+  color: var(--bday);
+  font-weight: 500;
+}
